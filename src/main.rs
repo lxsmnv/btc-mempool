@@ -2,12 +2,12 @@
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use futures::future::join_all;
-use btc_nodes::dns_seed::get_btc_nodes;
+use btc_mempool::dns_seed::get_btc_nodes;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use slog::Logger;
-use btc_nodes::p2p::query_mempool::query_mempool;
-use btc_nodes::p2p::mempool_info::MempoolInfo;
+use btc_mempool::p2p::query_mempool::query_mempool;
+use btc_mempool::p2p::mempool_info::MempoolInfo;
 
 
 #[macro_use]
