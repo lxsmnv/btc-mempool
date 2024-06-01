@@ -67,7 +67,7 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
             }
             (Some(NetworkMessage::Ping(ping)), _) => {
                 let pong_message = RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Pong(*ping));
-                trace!("Received pong message: {}", ping);
+                trace!("Received ping message: {}", ping);
                 writer.write_all(&encode::serialize(&pong_message).as_slice())?;
             }
             (Some(NetworkMessage::Pong(pong)), _) => {
@@ -83,7 +83,7 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
                 state.1 = Some(mi);
             }
             (Some(NetworkMessage::GetHeaders(_)), _) => {
-                info!("Received get headers message");
+                trace!("Received get headers message");
             }
             (Some(NetworkMessage::Inv(inv)), Some(mut mi)) => {
                 info!("Received inv message with {:?} transactions", inv.len());
