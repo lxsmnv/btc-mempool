@@ -8,7 +8,7 @@ use bitcoin::Network;
 use bitcoin::p2p::message::{NetworkMessage, RawNetworkMessage};
 use bitcoin::p2p::message_network::VersionMessage;
 use bitcoin::p2p::{Address, ServiceFlags};
-use slog::{info, trace, Logger};
+use log::{info, trace};
 use tokio::io;
 use crate::p2p::mempool_info::MempoolInfo;
 
@@ -20,9 +20,9 @@ fn connect_to_peer(addr: &SocketAddr) -> io::Result<(TcpStream, BufReader<TcpStr
     return Ok((writer, stream_reader));
 }
 
-pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration) -> io::Result<MempoolInfo> {
+pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<MempoolInfo> {
     let start_time = SystemTime::now();
-    info!(logger, "query_mempool started, ip: {}", addr);
+    info!("query_mempool started, ip: {}", addr);
     let (mut writer,  mut stream_reader) = connect_to_peer(&addr)?;
 
     writer.write_all(&encode::serialize(&build_version_message(addr)).as_slice())?;
@@ -43,7 +43,7 @@ pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration
           Err(encode::Error::Io(ref e)) if e.kind() == WouldBlock => {
             if state.0 != None {
                 let ping_message = RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Ping(0));
-                trace!(logger,"Sending ping message");
+                trace!("Sending ping message");
                 writer.write_all(&encode::serialize(&ping_message).as_slice())?;
             }
             continue;
@@ -61,40 +61,40 @@ pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration
             (Some(NetworkMessage::Version(_)), _) => {
                 let verack_message = build_verack_message();
                 writer.write_all(&encode::serialize(&verack_message).as_slice())?;
-                info!(logger,"Sending mempool message");
+                info!("Sending mempool message");
                 let mempool_message = build_mempooll_message();
                 writer.write_all(&encode::serialize(&mempool_message).as_slice())?;
             }
             (Some(NetworkMessage::Ping(ping)), _) => {
                 let pong_message = RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Pong(*ping));
-                trace!(logger, "Received pong message: {}", ping);
+                trace!("Received pong message: {}", ping);
                 writer.write_all(&encode::serialize(&pong_message).as_slice())?;
             }
             (Some(NetworkMessage::Pong(pong)), _) => {
-                trace!(logger, "Received pong message: {}", pong);
+                trace!("Received pong message: {}", pong);
             }
             (Some(m @ NetworkMessage::Verack), _) => {
-                info!(logger,"Received verack message: {:?}", m);
+                info!("Received verack message: {:?}", m);
                 state.1 = Some(mempool_info);
             }
             (Some(NetworkMessage::FeeFilter(fee_filter)), Some(mut mi)) => {
-                info!(logger, "Received fee filter message: {:?}", fee_filter);
+                info!("Received fee filter message: {:?}", fee_filter);
                 mi.set_fee_filter(*fee_filter as u64);
                 state.1 = Some(mi);
             }
             (Some(NetworkMessage::GetHeaders(_)), _) => {
-                info!(logger, "Received get headers message");
+                info!("Received get headers message");
             }
             (Some(NetworkMessage::Inv(inv)), Some(mut mi)) => {
-                info!(logger, "Received inv message with {:?} transactions", inv.len());
+                info!("Received inv message with {:?} transactions", inv.len());
                 mi.update_mempool_count(inv.len());
                 state.1 = Some(mi);
             }
             (Some(message), _) => {
-                info!(logger, "Received unknown message: {:?}", message);
+                info!("Received unknown message: {:?}", message);
             }
             _ => {
-                info!(logger, "Invalid state");
+                info!("Invalid state");
                 return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"));
             }
         }

@@ -5,19 +5,14 @@ use futures::future::join_all;
 use btc_mempool::dns_seed::get_btc_nodes;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
-use slog::Logger;
 use btc_mempool::p2p::query_mempool::query_mempool;
 use btc_mempool::p2p::mempool_info::MempoolInfo;
-
-
-#[macro_use]
-extern crate slog;
-extern crate slog_term;
-extern crate slog_async;
-use crate::slog::Drain;
+use log::info;
+use simple_logger::SimpleLogger;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    SimpleLogger::new().init().unwrap();
     let mut rng = thread_rng();
     let mut ips: Vec<IpAddr> = get_btc_nodes();
     ips.shuffle(&mut rng);
@@ -26,27 +21,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let timeout_duration = Duration::from_secs(5);
 
-    let logger = create_logger();
+    info!("Started. max_nodes: {}, query_timeout: {} ms", max_nodes, timeout_duration.as_millis());
+    info!("Selected IPs: {:?}", selected_ips);
 
-    info!(logger, "Started. max_nodes: {}, query_timeout: {} ms", max_nodes, timeout_duration.as_millis());
-    info!(logger, "Selected IPs: {:?}", selected_ips);
-
-    let results = get_mempool_info(&logger, selected_ips.to_vec(), timeout_duration).await;
+    let results = get_mempool_info(selected_ips.to_vec(), timeout_duration).await;
     print_report(results);
     Ok(())
 }
 
-fn create_logger() -> Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    Logger::root(drain, o!())
-}
-
-async fn get_mempool_info(logger: &Logger, ips: Vec<IpAddr>, timeout_duration: Duration) -> Vec<Result<MempoolInfo, std::io::Error>> {
+async fn get_mempool_info(ips: Vec<IpAddr>, timeout_duration: Duration) -> Vec<Result<MempoolInfo, std::io::Error>> {
     let mut tasks = vec![];
     for ip in ips {
-        tasks.push(query_mempool(logger, SocketAddr::new(ip, 8333), timeout_duration));
+        tasks.push(query_mempool(SocketAddr::new(ip, 8333), timeout_duration));
     }
     let results = join_all(tasks).await;
     return results;
