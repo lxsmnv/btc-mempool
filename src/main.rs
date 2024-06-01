@@ -1,4 +1,4 @@
-
+use std::cmp::{max, min};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use futures::future::join_all;
@@ -16,20 +16,13 @@ extern crate slog_term;
 extern crate slog_async;
 use crate::slog::Drain;
 
-fn create_logger() -> slog::Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    slog::Logger::root(drain, o!())
-}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let max_nodes = 3;
     let mut rng = thread_rng();
     let mut ips: Vec<IpAddr> = get_btc_nodes();
     ips.shuffle(&mut rng);
+    let max_nodes = 20;
     let selected_ips = &ips[..max_nodes];
-
 
     let timeout_duration = Duration::from_secs(5);
 
@@ -41,6 +34,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let results = get_mempool_info(&logger, selected_ips.to_vec(), timeout_duration).await;
     print_report(results);
     Ok(())
+}
+
+fn create_logger() -> Logger {
+    let decorator = slog_term::TermDecorator::new().build();
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let drain = slog_async::Async::new(drain).build().fuse();
+    Logger::root(drain, o!())
 }
 
 async fn get_mempool_info(logger: &Logger, ips: Vec<IpAddr>, timeout_duration: Duration) -> Vec<Result<MempoolInfo, std::io::Error>> {
@@ -58,14 +58,47 @@ fn print_mempool_info(mem_pool_info: MempoolInfo) {
 }
 
 fn print_report(results: Vec<Result<MempoolInfo, std::io::Error>>) {
+
+    let mut success_count = 0;
+    let mut error_count = 0;
+    let mut fee_min_max = (0, 0);
+    let mut fee_sum: u64 = 0;
+    let mut fee_count: u64 = 0;
+    let mut mempool_min_max = (0, 0);
+    let mut mempool_sum: u64 = 0;
+    let mut mempool_count: u64 = 0;
+
+    fn min_max_calc(min_max: (u64, u64), value: u64) -> (u64, u64) {
+        if min_max == (0, 0) {
+            (value, value)
+        } else {
+            (min(value, min_max.0), max(value, min_max.1))
+        }
+    }
+
     for result in results {
         match result {
             Ok(mem_pool_info) => {
                 print_mempool_info(mem_pool_info);
+                success_count += 1;
+                if let Some(fee) = mem_pool_info.fee_filter {
+                    fee_min_max = min_max_calc(fee_min_max, fee);
+                    fee_sum += fee;
+                    fee_count += 1;
+                }
+                if let Some(mc) = mem_pool_info.mempool_count {
+                    let mc = mc as u64;
+                    mempool_min_max = min_max_calc(mempool_min_max, mc);
+                    mempool_sum += mc;
+                    mempool_count += 1;
+                }
             }
-            Err(e) => {
-                println!("Error: {}", e);
+            Err(_) => {
+                error_count += 1;
             }
         }
     }
+    println!("successful: {}, errors: {}", success_count, error_count);
+    println!("Fee Filter: min: {}, max: {}, avg: {}", fee_min_max.0, fee_min_max.1, fee_sum / fee_count);
+    println!("Mempool Count: min: {}, max: {}, avg: {}", mempool_min_max.0, mempool_min_max.1, mempool_sum / mempool_count);
 }

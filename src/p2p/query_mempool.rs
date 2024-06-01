@@ -13,12 +13,13 @@ use tokio::io;
 use crate::p2p::mempool_info::MempoolInfo;
 
 fn connect_to_peer(addr: &SocketAddr) -> io::Result<(TcpStream, BufReader<TcpStream>)> {
-    let writer = TcpStream::connect(addr)?;
+    let writer = TcpStream::connect_timeout(addr, Duration::from_secs(3))?;
     writer.set_read_timeout(Some(Duration::from_millis(200)))?;
     let reader = writer.try_clone()?;
     let stream_reader = BufReader::new(reader);
     return Ok((writer, stream_reader));
 }
+
 pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration) -> io::Result<MempoolInfo> {
     let start_time = SystemTime::now();
     info!(logger, "query_mempool started, ip: {}", addr);
@@ -32,12 +33,8 @@ pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration
         let current_time = SystemTime::now();
         if current_time.duration_since(start_time).unwrap() > duration {
             match &state {
-                (_, Some(mi)) => {
-                    return Ok(mi.clone());
-                }
-                (_, None) => {
-                    return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"));
-                }
+                (_, Some(mi)) => { return Ok(mi.clone()); }
+                (_, None) => { return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out")); }
             }
         }
 
@@ -80,9 +77,10 @@ pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration
                 info!(logger,"Received verack message: {:?}", m);
                 state.1 = Some(mempool_info);
             }
-            (Some(NetworkMessage::FeeFilter(feed_filter)), Some(mut mi)) => {
-                info!(logger, "Received fee filter message: {:?}", feed_filter);
-                mi.set_fee_filter(*feed_filter as u64);
+            (Some(NetworkMessage::FeeFilter(fee_filter)), Some(mut mi)) => {
+                info!(logger, "Received fee filter message: {:?}", fee_filter);
+                mi.set_fee_filter(*fee_filter as u64);
+                state.1 = Some(mi);
             }
             (Some(NetworkMessage::GetHeaders(_)), _) => {
                 info!(logger, "Received get headers message");
@@ -90,6 +88,7 @@ pub async fn query_mempool(logger: &Logger, addr: SocketAddr, duration: Duration
             (Some(NetworkMessage::Inv(inv)), Some(mut mi)) => {
                 info!(logger, "Received inv message with {:?} transactions", inv.len());
                 mi.update_mempool_count(inv.len());
+                state.1 = Some(mi);
             }
             (Some(message), _) => {
                 info!(logger, "Received unknown message: {:?}", message);
