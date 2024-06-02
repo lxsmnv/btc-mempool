@@ -1,5 +1,5 @@
 use std::net::IpAddr;
-#[derive(Clone, Copy)]
+#[derive(Debug)]
 pub struct MempoolInfo {
     pub ip_address: IpAddr,
     pub fee_filter: Option<u64>,

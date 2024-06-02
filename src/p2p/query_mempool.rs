@@ -26,15 +26,14 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
     let (mut writer,  mut stream_reader) = connect_to_peer(&addr)?;
 
     writer.write_all(&encode::serialize(&build_version_message(addr)).as_slice())?;
-    let mempool_info = MempoolInfo::new(addr.ip());
     let mut state: (Option<NetworkMessage>, Option<MempoolInfo>) = (None, None);
 
     loop {
         let current_time = SystemTime::now();
         if current_time.duration_since(start_time).unwrap() > duration {
-            match &state {
-                (_, Some(mi)) => { return Ok(mi.clone()); }
-                (_, None) => { return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out")); }
+            match state {
+                (_, Some(mi)) => return Ok(mi),
+                (_, None) => return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"))
             }
         }
 
@@ -57,7 +56,7 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
 
         state.0 = Some(reply.payload().clone());
 
-        match &state {
+        match &mut state {
             (Some(NetworkMessage::Version(_)), _) => {
                 let verack_message = build_verack_message();
                 writer.write_all(&encode::serialize(&verack_message).as_slice())?;
@@ -75,27 +74,25 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
             }
             (Some(m @ NetworkMessage::Verack), _) => {
                 info!("Received verack message: {:?}", m);
-                state.1 = Some(mempool_info);
+                state.1 = Some(MempoolInfo::new(addr.ip()));
             }
-            (Some(NetworkMessage::FeeFilter(fee_filter)), Some(mut mi)) => {
+            (Some(NetworkMessage::FeeFilter(fee_filter)), Some(ref mut mi)) => {
                 info!("Received fee filter message: {:?}", fee_filter);
                 mi.set_fee_filter(*fee_filter as u64);
-                state.1 = Some(mi);
             }
             (Some(NetworkMessage::GetHeaders(_)), _) => {
                 trace!("Received get headers message");
             }
-            (Some(NetworkMessage::Inv(inv)), Some(mut mi)) => {
+            (Some(NetworkMessage::Inv(inv)), Some(ref mut mi)) => {
                 info!("Received inv message with {:?} transactions", inv.len());
                 mi.update_mempool_count(inv.len());
-                state.1 = Some(mi);
             }
             (Some(message), _) => {
                 info!("Received unknown message: {:?}", message);
             }
             _ => {
                 info!("Invalid state");
-                return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"));
+                return Err(Error::new(io::ErrorKind::InvalidData, "Invalid state"));
             }
         }
     }

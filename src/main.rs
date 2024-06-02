@@ -38,7 +38,7 @@ async fn get_mempool_info(ips: Vec<IpAddr>, timeout_duration: Duration) -> Vec<R
     return results;
 }
 
-fn print_mempool_info(mem_pool_info: MempoolInfo) {
+fn print_mempool_info(mem_pool_info: &MempoolInfo) {
     println!("IP Address: {}, Fee Filter: {:?}, Mempool Count: {:?}",
              mem_pool_info.ip_address, mem_pool_info.fee_filter, mem_pool_info.mempool_count);
 }
@@ -63,7 +63,7 @@ fn print_report(results: Vec<Result<MempoolInfo, std::io::Error>>) {
     }
 
     for result in results {
-        match result {
+        match &result {
             Ok(mem_pool_info) => {
                 print_mempool_info(mem_pool_info);
                 success_count += 1;
