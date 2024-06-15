@@ -26,37 +26,24 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
     let (mut writer,  mut stream_reader) = connect_to_peer(&addr)?;
 
     writer.write_all(&encode::serialize(&build_version_message(addr)).as_slice())?;
-    let mut state: (Option<NetworkMessage>, Option<MempoolInfo>) = (None, None);
+    let mut mempool_state: Option<MempoolInfo> = None;
 
     loop {
-        let current_time = SystemTime::now();
-        if current_time.duration_since(start_time).unwrap() > duration {
-            match state {
-                (_, Some(mi)) => return Ok(mi),
-                (_, None) => return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"))
+        if SystemTime::now().duration_since(start_time).unwrap() > duration {
+            match mempool_state {
+                Some(mi) => return Ok(mi),
+                None => return Err(Error::new(io::ErrorKind::TimedOut, "Operation timed out"))
             }
         }
 
         let reply = match RawNetworkMessage::consensus_decode(&mut stream_reader) {
           Ok(reply) => Ok(reply),
-          Err(encode::Error::Io(ref e)) if e.kind() == WouldBlock => {
-            if state.0 != None {
-                let ping_message = RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Ping(0));
-                trace!("Sending ping message");
-                writer.write_all(&encode::serialize(&ping_message).as_slice())?;
-            }
-            continue;
-          }
-          Err(encode::Error::Io(_)) if state.1.is_some() => {
-            return Ok(state.1.unwrap());
-          }
-          Err(e) =>
-               Err(Error::new(io::ErrorKind::InvalidData, e.to_string()))
+          Err(encode::Error::Io(ref e)) if e.kind() == WouldBlock => continue,
+          Err(encode::Error::Io(_)) if mempool_state.is_some() => return Ok(mempool_state.unwrap()),
+          Err(e) => Err(Error::new(io::ErrorKind::InvalidData, e.to_string()))
         }?;
 
-        state.0 = Some(reply.payload().clone());
-
-        match &mut state {
+        match (Some(reply.payload()), mempool_state.as_mut()) {
             (Some(NetworkMessage::Version(_)), _) => {
                 let verack_message = build_verack_message();
                 writer.write_all(&encode::serialize(&verack_message).as_slice())?;
@@ -65,16 +52,13 @@ pub async fn query_mempool( addr: SocketAddr, duration: Duration) -> io::Result<
                 writer.write_all(&encode::serialize(&mempool_message).as_slice())?;
             }
             (Some(NetworkMessage::Ping(ping)), _) => {
-                let pong_message = RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Pong(*ping));
                 trace!("Received ping message: {}", ping);
+                let pong_message = build_pong_message(*ping);
                 writer.write_all(&encode::serialize(&pong_message).as_slice())?;
-            }
-            (Some(NetworkMessage::Pong(pong)), _) => {
-                trace!("Received pong message: {}", pong);
             }
             (Some(m @ NetworkMessage::Verack), _) => {
                 info!("Received verack message: {:?}", m);
-                state.1 = Some(MempoolInfo::new(addr.ip()));
+                mempool_state = Some(MempoolInfo::new(addr.ip()));
             }
             (Some(NetworkMessage::FeeFilter(fee_filter)), Some(ref mut mi)) => {
                 info!("Received fee filter message: {:?}", fee_filter);
@@ -116,6 +100,10 @@ fn build_version_message(addr: SocketAddr) -> RawNetworkMessage {
 
 fn build_mempooll_message() -> RawNetworkMessage {
    return RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::MemPool)
+}
+
+fn build_pong_message(nonce: u64) -> RawNetworkMessage {
+    return RawNetworkMessage::new(Network::Bitcoin.magic(), NetworkMessage::Pong(nonce))
 }
 
 fn build_verack_message() -> RawNetworkMessage {

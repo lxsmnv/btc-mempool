@@ -84,7 +84,9 @@ fn print_report(results: Vec<Result<MempoolInfo, std::io::Error>>) {
             }
         }
     }
+    let fee_avg = if fee_count == 0 { 0 } else { fee_sum / fee_count };
+    let mempool_avg = if mempool_count == 0 { 0 } else { mempool_sum / mempool_count };
     println!("successful: {}, errors: {}", success_count, error_count);
-    println!("Fee Filter: min: {}, max: {}, avg: {}", fee_min_max.0, fee_min_max.1, fee_sum / fee_count);
-    println!("Mempool Count: min: {}, max: {}, avg: {}", mempool_min_max.0, mempool_min_max.1, mempool_sum / mempool_count);
+    println!("Fee Filter: min: {}, max: {}, avg: {}", fee_min_max.0, fee_min_max.1, fee_avg);
+    println!("Mempool Count: min: {}, max: {}, avg: {}", mempool_min_max.0, mempool_min_max.1, mempool_avg);
 }
